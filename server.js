@@ -7,6 +7,10 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
+let machineIp = getLocalIpAddress();
+let machinePort = 3000;
+let nextMachineIpPort = '';
+
 function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -19,66 +23,85 @@ function getLocalIpAddress() {
     return 'localhost';
 }
 
-// IP và cổng của máy hiện tại
-let machineIp = getLocalIpAddress();
-let machinePort = 3000; // Mặc định cổng đầu tiên
-let nextMachineIpPort = ''; // IP và cổng của máy kế tiếp
+function handleToken(socket) {
+    console.log(`${machineIp}:${machinePort} nhận được token.`);
+    waitForUserToPressEnter();
+}
 
-// Tạo server cho máy hiện tại
-const server = net.createServer((socket) => {
-    console.log('Kết nối từ máy:', socket.remoteAddress);
+function handleJoin(socket, message) {
+    const [newMachineIp, newMachinePort] = message.split(' ')[1].split(':');
+    if (newMachineIp === machineIp && newMachinePort === String(machinePort)) {
+        return;
+    }
+
+    // Gửi yêu cầu xếp chỗ gia nhập đến máy kế tiếp
+    const client = new net.Socket();
+    client.connect(nextMachineIpPort.split(':')[1], nextMachineIpPort.split(':')[0], () => {
+        client.write(`JOIN_REQUEST ${newMachineIp}:${newMachinePort} ${machineIp}:${machinePort}`);
+        client.end();
+    });
+
+    console.log(`Yêu cầu xếp chỗ gia nhập cho máy mới (${newMachineIp}:${newMachinePort}) đã được gửi.`);
+}
+
+function handleJoinRequest(socket, message) {
+    const parts = message.split(' ');
+    const newMachineIpPort = parts[1];
+    const requesterIpPort = parts[2];
+    const [newMachineIp, newMachinePort] = newMachineIpPort.split(':');
+    const [requesterIp, requesterPort] = requesterIpPort.split(':');
+
+    if (nextMachineIpPort === `${requesterIp}:${requesterPort}`) {
+        const oldNextMachineIpPort = nextMachineIpPort;
+        nextMachineIpPort = `${newMachineIp}:${newMachinePort}`;
+
+        const client = new net.Socket();
+        client.connect(newMachinePort, newMachineIp, () => {
+            client.write(`NEXT ${oldNextMachineIpPort}`);
+            client.end();
+        });
+
+        console.log(`Máy mới (${newMachineIp}:${newMachinePort}) đã gia nhập ngay sau ${machineIp}:${machinePort}.`);
+    } else {
+        // Chuyển tiếp yêu cầu xếp chỗ gia nhập đến máy kế tiếp
+        const client = new net.Socket();
+        client.connect(nextMachineIpPort.split(':')[1], nextMachineIpPort.split(':')[0], () => {
+            client.write(`JOIN_REQUEST ${newMachineIp}:${newMachinePort} ${requesterIp}:${requesterPort}`);
+            client.end();
+        });
+
+        console.log(`Yêu cầu xếp chỗ gia nhập cho máy mới (${newMachineIp}:${newMachinePort}) đã được chuyển tiếp.`);
+    }
+}
+
+function handleNext(socket, message) {
+    nextMachineIpPort = message.split(' ')[1];
+    console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
+}
+
+function handleError(socket, err) {
+    console.error('Lỗi socket:', err);
+}
+
+function handleConnection(socket) {
+    console.log('Kết nối từ máy:', `${socket.remoteAddress}:${socket.remotePort}`);
 
     socket.on('data', (data) => {
         const message = data.toString();
         if (message === 'TOKEN') {
-            console.log(`${machineIp}:${machinePort} nhận được token.`);
-            waitForUserToPressEnter();
-        } else if (message.startsWith('JOIN')) {
-            const [newMachineIp, newMachinePort] = message.split(' ')[1].split(':');
-
-            // Kiểm tra nếu địa chỉ IP và cổng trùng với chính máy hiện tại
-            if (newMachineIp === machineIp && newMachinePort === String(machinePort)) {
-                console.log('Bỏ qua JOIN từ chính máy hiện tại.');
-                return;
-            }
-
-            // Lưu lại next cũ
-            const oldNextMachineIpPort = nextMachineIpPort;
-
-            // Cập nhật next của máy hiện tại là máy mới
-            nextMachineIpPort = `${newMachineIp}:${newMachinePort}`;
-
-            // Gửi thông tin next cũ cho máy mới
-            const client = new net.Socket();
-            client.connect(newMachinePort, newMachineIp, () => {
-                client.write(`NEXT ${oldNextMachineIpPort}`);
-                client.end();
-            });
-
-            console.log(`Máy mới (${newMachineIp}:${newMachinePort}) đã gia nhập ngay sau ${machineIp}:${machinePort}.`);
+            handleToken(socket);
         } else if (message.startsWith('NEXT')) {
-            // Cập nhật máy kế tiếp dựa trên thông tin nhận được
-            nextMachineIpPort = message.split(' ')[1];
-            console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
+            handleNext(socket, message);
+        } else if (message.startsWith('JOIN_REQUEST')) {
+            handleJoinRequest(socket, message);
+        } else if (message.startsWith('JOIN')) {
+            handleJoin(socket, message);
         }
     });
 
-
-    socket.on('error', (err) => console.error('Lỗi socket:', err));
-});
-
-// Hàm chờ người dùng nhấn Enter để truyền token
-function waitForUserToPressEnter() {
-    if (rl.closed) {
-        console.error('Readline interface đã bị đóng.');
-        return;
-    }
-    rl.question('Nhấn Enter để chuyền token cho máy tiếp theo: ', () => {
-        sendTokenToNextMachine();
-    });
+    socket.on('error', (err) => handleError(socket, err));
 }
 
-// Gửi token đến máy kế tiếp
 function sendTokenToNextMachine() {
     if (nextMachineIpPort) {
         const [nextIp, nextPort] = nextMachineIpPort.split(':');
@@ -94,7 +117,16 @@ function sendTokenToNextMachine() {
     }
 }
 
-// Tham gia hoặc tạo vòng
+function waitForUserToPressEnter() {
+    if (rl.closed) {
+        console.error('Readline interface đã bị đóng.');
+        return;
+    }
+    rl.question('Nhấn Enter để chuyền token cho máy tiếp theo: ', () => {
+        sendTokenToNextMachine();
+    });
+}
+
 function joinRing() {
     rl.question('Nhập IP:PORT của máy đã có trong vòng (hoặc nhấn Enter để tạo vòng mới): ', (input) => {
         if (input) {
@@ -109,21 +141,21 @@ function joinRing() {
         } else {
             nextMachineIpPort = `${machineIp}:${machinePort}`;
             console.log('Máy này là máy đầu tiên trong vòng.');
-            sendTokenToNextMachine(); // Bắt đầu chuyền token
+            sendTokenToNextMachine();
         }
     });
 }
 
-// Hàm khởi động server và kiểm tra cổng
 function startServer(port) {
+    const server = net.createServer(handleConnection);
     server.listen(port, machineIp, () => {
         machinePort = port;
         console.log(`Máy ${machineIp}:${machinePort} đang chạy...`);
-        joinRing(); // Gia nhập hoặc tạo vòng
+        joinRing();
     }).on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
             console.log(`Cổng ${port} đang bận, thử cổng khác...`);
-            startServer(port + 1); // Thử cổng kế tiếp
+            startServer(port + 1);
         } else {
             console.error('Lỗi khi khởi động server:', err);
         }
