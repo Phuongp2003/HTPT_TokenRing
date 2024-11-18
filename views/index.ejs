@@ -1,0 +1,147 @@
+<body>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			margin: 20px;
+		}
+		
+		h1 {
+			color: #333;
+		}
+		
+		p {
+			font-size: 16px;
+		}
+		
+		#messageBox {
+			display: none;
+			position: fixed;
+			top: 10px;
+			left: 10px;
+			background-color: #f0f0f0;
+			padding: 10px;
+			border: 1px solid #ccc;
+			border-radius: 5px;
+		}
+		
+		form {
+			margin-bottom: 10px;
+		}
+		
+		button {
+			padding: 10px 20px;
+			background-color: #007BFF;
+			color: white;
+			border: none;
+			border-radius: 5px;
+			cursor: pointer;
+		}
+		
+		button:hover {
+			background-color: #0056b3;
+		}
+		
+		.hidden {
+			display: none !important;
+		}
+	</style>
+	
+	<h1>Machine Interface</h1>
+	<p>Machine IP: <span id="machineIp"><%= machineIp %></span>:<span id="machinePort"><%= machinePort %></span></p>
+	<p>Next Machine IP: <span id="nextMachineIpPort"><%= nextMachineIpPort %></span></p>
+	<p>Have token?: <span id="hasToken"><%= hasToken %></span></p>
+	<div id="messageBox" style="display: none; position: fixed; top: 10px; left: 10px; background-color: #f0f0f0; padding: 10px; border: 1px solid #ccc; border-radius: 5px;"></div>
+	<form id="joinForm">
+		<input type="text" id="ipPort" placeholder="Enter IP:Port to join" required>
+		<button type="submit">Join</button>
+	</form>
+	<form id="createForm">
+		<input type="text" id="defipPort" value="<%= machineIp %>:<%= machinePort %>" required style="display: none">
+		<button type="submit">Create</button>
+	</form>
+	<button id="sendButton">Send token</button>
+	
+	<script>
+		function showMessage(message) {
+			const messageBox = document.getElementById('messageBox');
+			messageBox.textContent = message;
+			messageBox.style.display = 'block';
+			setTimeout(() => {
+				messageBox.style.display = 'none';
+			}, 10000); // 10 seconds
+		}
+		
+		document.getElementById('joinForm').addEventListener('submit', function(event) {
+			event.preventDefault();
+			const ipPort = document.getElementById('ipPort').value;
+			fetch('/join-ring', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						ipPort
+					})
+				}).then(response => response.text())
+				.then(data => showMessage(data));
+		});
+		document.getElementById('createForm').addEventListener('submit', function(event) {
+			event.preventDefault();
+			const ipPort = document.getElementById('defipPort').value;
+			fetch('/join-ring', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						ipPort
+					})
+				}).then(response => response.text())
+				.then(data => showMessage(data));
+		});
+		document.getElementById('sendButton').addEventListener('click', function() {
+			fetch('/send-token', {
+					method: 'POST'
+				}).then(response => response.text())
+				.then(data => showMessage(data));
+		});
+		
+		function updateUI(data) {
+			document.getElementById('machineIp').textContent = data.machineIp;
+			document.getElementById('machinePort').textContent = data.machinePort;
+			document.getElementById('nextMachineIpPort').textContent = data.nextMachineIpPort;
+			document.getElementById('hasToken').textContent = data.hasToken;
+			
+			const joinForm = document.getElementById('joinForm');
+			const createForm = document.getElementById('createForm');
+			const sendButton = document.getElementById('sendButton');
+			
+			if (data.nextMachineIpPort) {
+				joinForm.style.display = 'none';
+				createForm.style.display = 'none';
+			} else {
+				joinForm.style.display = 'block';
+				createForm.style.display = 'block';
+			}
+			
+			if (data.hasToken) {
+				sendButton.style.display = 'block';
+			} else {
+				sendButton.style.display = 'none';
+			}
+		}
+		
+		const ws = new WebSocket(`ws://${window.location.host}`);
+		ws.onmessage = function(event) {
+			const data = JSON.parse(event.data);
+			updateUI(data);
+		};
+		
+		updateUI({
+			machineIp: '<%= machineIp %>',
+			machinePort: '<%= machinePort %>',
+			nextMachineIpPort: '<%= nextMachineIpPort %>',
+			hasToken: '<%= hasToken %>'
+		});
+	</script>
+</body>
