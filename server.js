@@ -299,6 +299,7 @@ function createHeartbeatTimeout() {
     heartbeatTimeout = setTimeout(() => {
         console.error('Không nhận lại được tin nhẵn đã gửi! Gửi yêu cầu kết nối lại!');
         if (!waitingReconnect) {
+            clearInterval(heartbeatInterval);
             client.connect(nextPort, nextIp, () => {
                 client.write(`RECONNECT ${machineIp}:${machinePort} ${hasToken ? 'HTOKEN' : 'NTOKEN'}`);
                 console.log('Gửi y/c kết nối thành công!')
