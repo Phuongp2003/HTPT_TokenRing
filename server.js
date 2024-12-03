@@ -179,7 +179,7 @@ function handleConnection(socket) {
                     nextMachineIpPort = newIpPort;
                     startHeartbeat();
                     console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
-                    if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
+                    if (tokenStatus === 'NTOKEN' && !hasToken) sendTokenToNextMachine();
                     broadcastUpdate();
                 });
 
@@ -308,8 +308,6 @@ function createHeartbeatTimeout() {
 
             client.on('error', (err) => {
                 console.error('Không thể gửi yêu cầu reconnect đến máy tiếp theo, tiến hành huỷ vòng, chi tiết: ', err);
-                nextMachineIpPort = `${machineIp}:${machinePort}`;
-                hasToken = true;
                 broadcastUpdate();
             });
         } else
