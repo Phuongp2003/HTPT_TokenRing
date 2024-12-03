@@ -122,7 +122,7 @@ function handleConnection(socket) {
                 handleJoinRequest(socket, message);
             } else if (message.startsWith('JOIN')) {
                 handleJoin(socket, message);
-            } else if (message.startsWith('HEARTBEAT')) {
+            } else if (message.startsWith('HEARTBEAT') && !waitingReconnect) {
                 resetHeartbeatTimeout(message);
             } else if (message.startsWith('RECONNECT')) {
                 // const newIpPort = message.split(' ')[1];
