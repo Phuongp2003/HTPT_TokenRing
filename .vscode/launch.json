@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "command": "node server.js 9999 --host",
+            "name": "Run npm start",
+            "request": "launch",
+            "type": "node-terminal"
+        }
+    ]
+}

@@ -16,9 +16,11 @@ let waitingReconnect = false;
 function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
+        if (name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('wireless') || name.toLowerCase().includes('wlan')) {
+            for (const iface of interfaces[name]) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    return iface.address;
+                }
             }
         }
     }
@@ -38,6 +40,7 @@ function handleToken(socket) {
 function handleJoin(socket, message) {
     try {
         const [newMachineIp, newMachinePort] = message.split(' ')[1].split(':');
+        console.log("🚀 ~ handleJoin ~ newMachineIp, newMachinePort:", newMachineIp, newMachinePort)
         if (newMachineIp === machineIp && newMachinePort === String(machinePort)) {
             return;
         }
@@ -100,17 +103,15 @@ function handleNext(socket, message) {
 }
 
 function handleError(socket, err) {
+    // Không dùng nhiều
     console.error('Lỗi socket:', err);
 }
 
 function handleConnection(socket) {
     try {
-
-
-        console.log('Nhận được tin!\n');
-
         socket.on('data', (data) => {
-            const message = data.toString();
+            let message = data.toString();
+            console.log("Nhận được tin nhắn, nội dung: :", message)
             if (message === 'TOKEN') {
                 handleToken(socket);
             } else if (message.startsWith('NEXT')) {
@@ -119,16 +120,19 @@ function handleConnection(socket) {
                 handleJoinRequest(socket, message);
             } else if (message.startsWith('JOIN')) {
                 handleJoin(socket, message);
-            } else if (message === 'HEARTBEAT') {
-                resetHeartbeatTimeout();
+            } else if (message.startsWith('HEARTBEAT')) {
+                resetHeartbeatTimeout(message);
             } else if (message.startsWith('RECONNECT')) {
                 const newIpPort = message.split(' ')[1];
-                const tokenStatus = message.split(' ')[2];
+                let tokenStatus = message.split(' ')[2];
+
                 if (waitingReconnect) {
                     nextMachineIpPort = newIpPort;
-                    waitingReconnect = false;
-                    console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
+                    startHeartbeat();
+                    console.log(`Kết nối lại với máy kế tiếp: ${nextMachineIpPort}`);
                     if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
+                    createHeartbeatTimeout()
+                    waitingReconnect = false;
                     broadcastUpdate();
                 } else {
                     const [nextIp, nextPort] = nextMachineIpPort.split(':');
@@ -143,9 +147,12 @@ function handleConnection(socket) {
                     });
 
                     client.on('error', (err) => {
-                        console.error('Lỗi client:', err);
-                        // Nếu không thể kết nối tới máy kế tiếp, điều chỉnh vòng để bỏ qua máy đó
-                        nextMachineIpPort = '';
+                        console.error('Không chuyển tiếp được tin nhắn y/c kết nối lại, kết nối trực tiếp với máy gửi y/c! Chi tiết lỗi: :', err);
+                        nextMachineIpPort = newIpPort;
+                        waitingReconnect = false;
+                        startHeartbeat();
+                        console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
+                        if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
                         broadcastUpdate();
                     });
                 }
@@ -168,16 +175,16 @@ function sendTokenToNextMachine() {
                 client.write('TOKEN');
                 client.end();
             });
-
-            client.on('error', (err) => {
-                console.error('Lỗi client:', err);
-                // Nếu không thể kết nối tới máy kế tiếp, điều chỉnh vòng để bỏ qua máy đó
-                nextMachineIpPort = '';
-                broadcastUpdate();
-            });
-
             hasToken = false; // Cập nhật trạng thái token
             broadcastUpdate(); // Cập nhật trạng thái token
+
+            client.on('error', (err) => {
+                console.error('Không thể gửi token đến máy tiếp theo, chi tiết: ', err);
+                // Nếu không thể kết nối tới máy kế tiếp, điều chỉnh vòng để bỏ qua máy đó
+                nextMachineIpPort = '';
+                hasToken = true;
+                broadcastUpdate();
+            });
         } else {
             console.error('Không có thông tin máy kế tiếp.');
         }
@@ -194,7 +201,7 @@ function joinRing(ipPort) {
             nextMachineIpPort = `${inputIp}:${inputPort}`;
             const client = new net.Socket();
             client.connect(parseInt(inputPort, 10), inputIp, () => {
-                console.log(`Đã kết nối với máy ${inputIp}:${inputPort}, giờ tôi là máy kế tiếp.`);
+                console.log(`Máy ${inputIp}:${inputPort} đã kết nối, tiến hành kết nối với máy ${nextMachineIpPort} để tham gia vòng!`);
                 client.write(`JOIN ${machineIp}:${machinePort}`);
                 client.end();
             });
@@ -221,11 +228,13 @@ function startHeartbeat() {
                 const [nextIp, nextPort] = nextMachineIpPort.split(':');
                 const client = new net.Socket();
                 client.connect(nextPort, nextIp, () => {
-                    client.write('HEARTBEAT');
+                    client.write(`HEARTBEAT ${machineIp}:${machinePort}`);
                     client.end();
                 });
                 client.on('error', (err) => {
-                    console.error('Lỗi client:', err);
+                    console.error('Không thể gửi heartbeat đến máy sau đó, vào trạng thái chờ kết nói lại! Chi tiết: ', err);
+                    clearInterval(heartbeatInterval);
+                    clearTimeout(heartbeatTimeout);
                     waitingReconnect = true;
                 });
             }
@@ -236,29 +245,50 @@ function startHeartbeat() {
 
 }
 
-function resetHeartbeatTimeout() {
+function resetHeartbeatTimeout(message) {
     try {
-        clearTimeout(heartbeatTimeout);
-        heartbeatTimeout = setTimeout(() => {
-            console.error('Không nhận được tín hiệu heartbeat từ máy trước đó.');
-            const [nextIp, nextPort] = nextMachineIpPort.split(':');
+        const parts = message.split(' ');
+        const messageIp = parts[1];
+        console.log("🚀 ~ resetHeartbeatTimeout ~ messageIp:", messageIp)
+
+
+        if (messageIp === `${machineIp}:${machinePort}`) {
+            clearTimeout(heartbeatTimeout);
+            createHeartbeatTimeout();
+        } else {
             const client = new net.Socket();
+            const [nextIp, nextPort] = nextMachineIpPort.split(':');
             client.connect(nextPort, nextIp, () => {
-                client.write(`RECONNECT ${machineIp}:${machinePort} ${hasToken ? 'HTOKEN' : 'NTOKEN'}`);
+                client.write(message);
                 client.end();
             });
-
             client.on('error', (err) => {
-                console.error('Lỗi client:', err);
-                // Nếu không thể kết nối tới máy kế tiếp, điều chỉnh vòng để bỏ qua máy đó
-                nextMachineIpPort = '';
-                broadcastUpdate();
+                console.error('Không thể chuyển tiếp heartbeat đến máy tiếp theo, chi tiết: ', err);
             });
-        }, 10000); // Chờ tín hiệu heartbeat trong 10 giây
+        }
     } catch (error) {
         console.error(error);
     }
+}
 
+function createHeartbeatTimeout() {
+    const client = new net.Socket();
+    const [nextIp, nextPort] = nextMachineIpPort.split(':');
+    heartbeatTimeout = setTimeout(() => {
+        console.error('Không nhận lại được tin nhẵn đã gửi! Gửi yêu cầu kết nối lại!');
+        client.connect(nextPort, nextIp, () => {
+            client.write(`RECONNECT ${machineIp}:${machinePort} ${hasToken ? 'HTOKEN' : 'NTOKEN'}`);
+            console.log('Gửi y/c kết nối thành công!')
+            client.end();
+        });
+
+        client.on('error', (err) => {
+            console.error('Không thể gửi yêu cầu reconnect đến máy tiếp theo, tiến hành huỷ vòng, chi tiết: ', err);
+            nextMachineIpPort = `${machineIp}:${machinePort}`;
+            hasToken = true;
+            broadcastUpdate();
+        });
+    }, 10000);
 }
 
 function startServer(port) {
