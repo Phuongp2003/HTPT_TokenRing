@@ -12,7 +12,6 @@ let hasToken = false; // Variable to track token status
 let waitingReconnect = false;
 let heartbeatInterval;
 let heartbeatTimeout;
-let inReconnecting = false;
 
 // Token ring server by net (tcp)
 
@@ -159,6 +158,8 @@ function handleConnection(socket) {
                 //         broadcastUpdate();
                 //     });
                 // }
+
+                waitingReconnect = true;
                 const newIpPort = message.split(' ')[1];
                 let tokenStatus = message.split(' ')[2];
                 const [nextIp, nextPort] = nextMachineIpPort.split(':');
@@ -272,8 +273,6 @@ function resetHeartbeatTimeout(message) {
     try {
         const parts = message.split(' ');
         const messageIp = parts[1];
-        console.log("🚀 ~ resetHeartbeatTimeout ~ messageIp:", messageIp)
-
 
         if (messageIp === `${machineIp}:${machinePort}`) {
             clearTimeout(heartbeatTimeout);
@@ -299,18 +298,21 @@ function createHeartbeatTimeout() {
     const [nextIp, nextPort] = nextMachineIpPort.split(':');
     heartbeatTimeout = setTimeout(() => {
         console.error('Không nhận lại được tin nhẵn đã gửi! Gửi yêu cầu kết nối lại!');
-        client.connect(nextPort, nextIp, () => {
-            client.write(`RECONNECT ${machineIp}:${machinePort} ${hasToken ? 'HTOKEN' : 'NTOKEN'}`);
-            console.log('Gửi y/c kết nối thành công!')
-            client.end();
-        });
+        if (!waitingReconnect) {
+            client.connect(nextPort, nextIp, () => {
+                client.write(`RECONNECT ${machineIp}:${machinePort} ${hasToken ? 'HTOKEN' : 'NTOKEN'}`);
+                console.log('Gửi y/c kết nối thành công!')
+                client.end();
+            });
 
-        client.on('error', (err) => {
-            console.error('Không thể gửi yêu cầu reconnect đến máy tiếp theo, tiến hành huỷ vòng, chi tiết: ', err);
-            nextMachineIpPort = `${machineIp}:${machinePort}`;
-            hasToken = true;
-            broadcastUpdate();
-        });
+            client.on('error', (err) => {
+                console.error('Không thể gửi yêu cầu reconnect đến máy tiếp theo, tiến hành huỷ vòng, chi tiết: ', err);
+                nextMachineIpPort = `${machineIp}:${machinePort}`;
+                hasToken = true;
+                broadcastUpdate();
+            });
+        } else
+            waitingReconnect = false;
     }, 10000);
 }
 
