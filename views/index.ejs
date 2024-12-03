@@ -3,6 +3,7 @@
 		body {
 			font-family: Arial, sans-serif;
 			margin: 20px;
+			height: 90vh;
 		}
 		
 		h1 {
@@ -44,23 +45,65 @@
 		.hidden {
 			display: none !important;
 		}
+		
+		.d-flex-r {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+		
+		.text-error {
+			color: red
+		}
+		
+		.w-50 {
+			width: 50%;
+		}
+		
+		.w-100 {
+			width: 100%;
+		}
+		
+		#logMessage {
+			min-height: 350px;
+			max-height: 350px;
+			overflow: scroll;
+		}
 	</style>
 	
-	<h1>Token ring demo</h1>
-	<p>Địa chỉ IP của máy này: <span id="machineIp"><%= machineIp %></span>:<span id="machinePort"><%= machinePort %></span></p>
-	<p>Địa chỉ IP của máy tiếp theo: <span id="nextMachineIpPort"><%= nextMachineIpPort %></span></p>
-	<p>Trạng thái token: <span id="hasToken"><%= hasToken ? 'Đang giữ TOKEN': 'Không giữ token' %></span></p>
-	<div id="messageBox" style="display: none; position: fixed; top: 10px; left: 10px; background-color: #f0f0f0; padding: 10px; border: 1px solid #ccc; border-radius: 5px;"></div>
-	<form id="joinForm">
-		<input type="text" id="ipPort" placeholder="Nhập địa chỉ IP:Cổng để tham gia" required>
-		<button type="submit">Tham gia vòng có sẵn</button>
-	</form>
-	<form id="createForm">
-		<input type="text" id="defipPort" value="<%= machineIp %>:<%= machinePort %>" required style="display: none">
-		<button type="submit">Tạo vòng mới</button>
-	</form>
-	<button id="sendButton">Gửi token</button>
-	<button id="exitButton">Thoát vòng</button>
+	<div class="app-wrap w-100 d-flex-r">
+		<div class="left-wrap w-50" style="min-width: 450px;">
+			<h1>Token ring demo</h1>
+			<p>Địa chỉ IP của máy này: <span id="machineIp"><%= machineIp %></span>:<span id="machinePort"><%= machinePort %></span></p>
+			<p>Địa chỉ IP của máy tiếp theo: <span id="nextMachineIpPort"><%= nextMachineIpPort %></span></p>
+			<p>Trạng thái token:
+				<span id="hasToken">
+					<%= hasToken ? 'Đang giữ TOKEN': 'Không giữ token' %>
+				</span>
+			</p>
+			<div id="statusBox" style="width: 50px; height: 50px; border-radius: 50px; margin: 5px"></div>
+			<div id=" messageBox" style="display: none; position: fixed; top: 10px; left: 10px; background-color: #f0f0f0; padding: 10px; border: 1px solid #ccc; border-radius: 5px;"></div>
+			<form id="joinForm">
+				<input type="text" id="ipPort" placeholder="Nhập địa chỉ IP:Cổng để tham gia" required>
+				<button type="submit">Tham gia vòng có sẵn</button>
+			</form>
+			<form id="createForm">
+				<input type="text" id="defipPort" value="<%= machineIp %>:<%= machinePort %>" required style="display: none">
+				<button type="submit">Tạo vòng mới</button>
+			</form>
+			<div class="d-flex-r">
+				<button id="sendButton">Gửi token</button>
+				<button id="exitButton">Thoát vòng</button>
+			</div>
+		</div>
+		<div class="right-wrap w-50">
+			<h2>Log</h2>
+			<div id="logMessage"></div>
+		</div>
+	</div>
+	
+	
+	
 	<script>
 		function showMessage(message) {
 			const messageBox = document.getElementById('messageBox');
@@ -116,38 +159,64 @@
 			document.getElementById('machineIp').textContent = data.machineIp;
 			document.getElementById('machinePort').textContent = data.machinePort;
 			document.getElementById('nextMachineIpPort').textContent = data.nextMachineIpPort;
-			document.getElementById('hasToken').textContent = data.hasToken;
+			document.getElementById('hasToken').textContent = data.hasToken ? 'Đang giữ TOKEN' : 'Không giữ token';
 			
 			const joinForm = document.getElementById('joinForm');
 			const createForm = document.getElementById('createForm');
 			const sendButton = document.getElementById('sendButton');
+			const exitButton = document.getElementById('exitButton');
 			
 			if (data.nextMachineIpPort) {
 				joinForm.style.display = 'none';
 				createForm.style.display = 'none';
+				exitButton.style.display = 'block';
+				document.getElementById('statusBox').style.display = 'block'
 			} else {
 				joinForm.style.display = 'block';
 				createForm.style.display = 'block';
+				exitButton.style.display = 'none';
+				document.getElementById('statusBox').style.display = 'none';
 			}
 			
 			if (data.hasToken) {
 				sendButton.style.display = 'block';
+				document.getElementById('hasToken').style.color = 'green';
+				document.getElementById('statusBox').style.backgroundColor = 'green'
 			} else {
 				sendButton.style.display = 'none';
+				document.getElementById('hasToken').style.color = 'red';
+				document.getElementById('statusBox').style.backgroundColor = 'red'
+			}
+			
+			if (data.inReconnecting) {
+				document.getElementById('statusBox').style.backgroundColor = 'yellow'
 			}
 		}
 		
 		const ws = new WebSocket(`ws://${window.location.host}`);
 		ws.onmessage = function(event) {
 			const data = JSON.parse(event.data);
-			updateUI(data);
+			if (data.machineIp)
+				updateUI(data);
+			
+			if (data.content && data.timestamp) {
+				const logMessage = document.getElementById('logMessage');
+				const messageElement = document.createElement('div');
+				messageElement.textContent = `${data.timestamp}: ${data.content}`;
+				if (data.type === 'error') {
+					messageElement.classList.add('text-error');
+				}
+				logMessage.appendChild(messageElement);
+				logMessage.scrollTop = logMessage.scrollHeight;
+			}
 		};
 		
 		updateUI({
 			machineIp: '<%= machineIp %>',
 			machinePort: '<%= machinePort %>',
 			nextMachineIpPort: '<%= nextMachineIpPort %>',
-			hasToken: '<%= hasToken %>'
+			hasToken: '<%= hasToken %>',
+			inReconnecting: '<%= inReconnecting %>',
 		});
 	</script>
 </body>
