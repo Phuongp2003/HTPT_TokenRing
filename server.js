@@ -10,6 +10,9 @@ let machinePort = 3000;
 let nextMachineIpPort = '';
 let hasToken = false; // Variable to track token status
 let waitingReconnect = false;
+let heartbeatInterval;
+let heartbeatTimeout;
+let inReconnecting = false;
 
 // Token ring server by net (tcp)
 
@@ -123,39 +126,62 @@ function handleConnection(socket) {
             } else if (message.startsWith('HEARTBEAT')) {
                 resetHeartbeatTimeout(message);
             } else if (message.startsWith('RECONNECT')) {
+                // const newIpPort = message.split(' ')[1];
+                // let tokenStatus = message.split(' ')[2];
+
+                // if (waitingReconnect) {
+                //     nextMachineIpPort = newIpPort;
+                //     startHeartbeat();
+                //     console.log(`Kết nối lại với máy kế tiếp: ${nextMachineIpPort}`);
+                //     if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
+                //     createHeartbeatTimeout()
+                //     waitingReconnect = false;
+                //     broadcastUpdate();
+                // } else {
+                //     const [nextIp, nextPort] = nextMachineIpPort.split(':');
+                //     const client = new net.Socket();
+                //     client.connect(nextPort, nextIp, () => {
+                //         if (hasToken) {
+                //             tokenStatus = 'HTOKEN';
+                //             message = `RECONNECT ${newIpPort} ${tokenStatus}`;
+                //         }
+                //         client.write(message);
+                //         client.end();
+                //     });
+
+                //     client.on('error', (err) => {
+                //         console.error('Không chuyển tiếp được tin nhắn y/c kết nối lại, kết nối trực tiếp với máy gửi y/c! Chi tiết lỗi: :', err);
+                //         nextMachineIpPort = newIpPort;
+                //         waitingReconnect = false;
+                //         startHeartbeat();
+                //         console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
+                //         if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
+                //         broadcastUpdate();
+                //     });
+                // }
                 const newIpPort = message.split(' ')[1];
                 let tokenStatus = message.split(' ')[2];
+                const [nextIp, nextPort] = nextMachineIpPort.split(':');
+                const client = new net.Socket();
+                client.connect(nextPort, nextIp, () => {
+                    if (hasToken) {
+                        tokenStatus = 'HTOKEN';
+                        message = `RECONNECT ${newIpPort} ${tokenStatus}`;
+                    }
+                    client.write(message);
+                    client.end();
 
-                if (waitingReconnect) {
+                });
+
+                client.on('error', (err) => {
+                    console.error('Không chuyển tiếp được tin nhắn y/c kết nối lại, kết nối trực tiếp với máy gửi y/c! Chi tiết lỗi: :', err);
                     nextMachineIpPort = newIpPort;
                     startHeartbeat();
-                    console.log(`Kết nối lại với máy kế tiếp: ${nextMachineIpPort}`);
+                    console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
                     if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
-                    createHeartbeatTimeout()
-                    waitingReconnect = false;
                     broadcastUpdate();
-                } else {
-                    const [nextIp, nextPort] = nextMachineIpPort.split(':');
-                    const client = new net.Socket();
-                    client.connect(nextPort, nextIp, () => {
-                        if (hasToken) {
-                            tokenStatus = 'HTOKEN';
-                            message = `RECONNECT ${newIpPort} ${tokenStatus}`;
-                        }
-                        client.write(message);
-                        client.end();
-                    });
+                });
 
-                    client.on('error', (err) => {
-                        console.error('Không chuyển tiếp được tin nhắn y/c kết nối lại, kết nối trực tiếp với máy gửi y/c! Chi tiết lỗi: :', err);
-                        nextMachineIpPort = newIpPort;
-                        waitingReconnect = false;
-                        startHeartbeat();
-                        console.log(`Cập nhật máy kế tiếp: ${nextMachineIpPort}`);
-                        if (tokenStatus === 'NTOKEN') sendTokenToNextMachine();
-                        broadcastUpdate();
-                    });
-                }
             }
         });
 
@@ -217,9 +243,6 @@ function joinRing(ipPort) {
     }
 
 }
-
-let heartbeatInterval;
-let heartbeatTimeout;
 
 function startHeartbeat() {
     try {
