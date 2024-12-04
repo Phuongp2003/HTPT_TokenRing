@@ -352,17 +352,22 @@ function exitRing() {
 function handleExit(socket, message) {
     try {
         const parts = message.split(' ');
-        const currentIpPort = parts[1];
-        const newNextIpPort = parts[2];
+        const exitMachineIpPort = parts[1];
+        const exitNextMachineIpPort = parts[2];
 
-        cLog(`Máy ${currentIpPort} đã thoát!`);
+        cLog(`Máy ${exitMachineIpPort} đã thoát!`);
 
-        if (nextMachineIpPort === currentIpPort) {
-            nextMachineIpPort = newNextIpPort;
+        if (`${machineIp}:${machinePort}` === exitNextMachineIpPort) {
+            cLog(`Không còn máy khác trong vòng, thực hiện huỷ vòng!`);
+            nextMachineIpPort = ''
+            clearInterval(heartbeatInterval);
+            clearTimeout(heartbeatTimeout);
+            hasToken = false;
+            broadcastUpdate();
+        } else if (nextMachineIpPort === exitMachineIpPort) {
+            nextMachineIpPort = exitNextMachineIpPort;
             cLog(`Cập nhật máy kế tiếp thành: ${nextMachineIpPort}`);
             broadcastUpdate();
-
-
         } else {
             const [nextIp, nextPort] = nextMachineIpPort.split(':');
             const client = new net.Socket();
