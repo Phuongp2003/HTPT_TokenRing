@@ -329,17 +329,15 @@ function exitRing() {
         if (hasToken) {
             sendTokenToNextMachine();
         }
-
+        nextMachineIpPort = ''
+        clearInterval(heartbeatInterval);
+        clearTimeout(heartbeatTimeout);
+        broadcastUpdate();
         client.connect(nextPort, nextIp, () => {
             cLog(`Thông báo thoát khỏi vòng được gửi!`);
             client.write(exitMessage);
             client.end();
         });
-
-        nextMachineIpPort = ''
-        clearInterval(heartbeatInterval);
-        clearTimeout(heartbeatTimeout);
-        broadcastUpdate();
 
         client.on('error', (err) => {
             cError("Không thể gửi tin nhắn thoát, chi tiết: ", err.message);
@@ -357,7 +355,7 @@ function handleExit(socket, message) {
 
         cLog(`Máy ${exitMachineIpPort} đã thoát!`);
 
-        if (`${machineIp}:${machinePort}` === exitNextMachineIpPort) {
+        if (`${machineIp}:${machinePort}` === exitNextMachineIpPort && nextMachineIpPort === exitMachineIpPort) {
             cLog(`Không còn máy khác trong vòng, thực hiện huỷ vòng!`);
             nextMachineIpPort = ''
             clearInterval(heartbeatInterval);
