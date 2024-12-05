@@ -72,16 +72,22 @@ function cError(...message) {
 
 function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
+    let fallbackAddress = null;
+
     for (const name of Object.keys(interfaces)) {
-        if (name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('wireless') || name.toLowerCase().includes('wlan')) {
-            for (const iface of interfaces[name]) {
-                if (iface.family === 'IPv4' && !iface.internal) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                if (name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('wireless') || name.toLowerCase().includes('wlan') || name.toLowerCase().includes('ethernet')) {
                     return iface.address;
+                }
+                if (!fallbackAddress) {
+                    fallbackAddress = iface.address;
                 }
             }
         }
     }
-    return 'localhost';
+
+    return fallbackAddress || 'localhost';
 }
 
 function startServer(port) {
